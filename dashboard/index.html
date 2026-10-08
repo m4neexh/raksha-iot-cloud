@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RAKSHA Cloud IoT Dashboard</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#070b12;color:#e8edf5;font-family:Arial,sans-serif}
+    header{padding:22px;background:#0c1320;border-bottom:1px solid #243246}
+    h1{margin:0;letter-spacing:2px}
+    main{max-width:1100px;margin:auto;padding:20px}
+    .card{background:#101a29;border:1px solid #25364c;border-radius:15px;padding:18px;margin-bottom:16px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+    .label{color:#8d9bb0;font-size:12px;text-transform:uppercase}
+    .value{font-size:24px;font-weight:bold;margin-top:7px}
+    input,button{padding:12px;border-radius:8px;border:1px solid #31435b;background:#0c1320;color:#fff}
+    input{width:100%;margin:6px 0}
+    button{cursor:pointer;background:#185adb;border:0}
+    .danger{color:#ff465c}.ok{color:#35d49a}.muted{color:#8d9bb0}
+    #dashboard{display:none}
+    #alert{display:none;padding:16px;border:2px solid #ff465c;border-radius:12px;background:#32121a;margin-bottom:16px}
+  </style>
+</head>
+<body>
+<header>
+  <h1>RAKSHA</h1>
+  <div class="muted">Cloud IoT Safety Monitoring Dashboard</div>
+</header>
+
+<main>
+  <section id="login" class="card">
+    <h2>Admin Login</h2>
+    <input id="username" placeholder="Username" autocomplete="username">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button onclick="login()">LOGIN</button>
+    <p id="loginMsg" class="danger"></p>
+  </section>
+
+  <section id="dashboard">
+    <div id="alert"></div>
+
+    <div class="card">
+      <h2>Device Status</h2>
+      <div class="grid">
+        <div><div class="label">Device</div><div id="device" class="value">-</div></div>
+        <div><div class="label">Last Received</div><div id="received" class="value">-</div></div>
+        <div><div class="label">Wi-Fi</div><div id="wifi" class="value">-</div></div>
+        <div><div class="label">GPS Fix</div><div id="gps" class="value">-</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Emergency Monitoring</h2>
+      <div class="grid">
+        <div><div class="label">SOS</div><div id="sos" class="value">-</div></div>
+        <div><div class="label">Impact</div><div id="impact" class="value">-</div></div>
+        <div><div class="label">Vibration</div><div id="vibration" class="value">-</div></div>
+        <div><div class="label">Latest Event</div><div id="event" class="value">-</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Location</h2>
+      <div class="grid">
+        <div><div class="label">Latitude</div><div id="lat" class="value">-</div></div>
+        <div><div class="label">Longitude</div><div id="lon" class="value">-</div></div>
+        <div><div class="label">Satellites</div><div id="sat" class="value">-</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Motion & Device Data</h2>
+      <div class="grid">
+        <div><div class="label">Acceleration</div><div id="acc" class="value">-</div></div>
+        <div><div class="label">Temperature</div><div id="temp" class="value">-</div></div>
+        <div><div class="label">Buzzer</div><div id="buzzer" class="value">-</div></div>
+        <div><div class="label">LED</div><div id="led" class="value">-</div></div>
+      </div>
+    </div>
+
+    <button onclick="logout()">LOGOUT</button>
+  </section>
+</main>
+
+<script>
+const DEVICE_ID = "esp32-safety-001";
+let token = localStorage.getItem("rakshaToken");
+
+function $(id){ return document.getElementById(id); }
+function show(v){ return v ? "YES" : "NO"; }
+
+function applyLoginState(){
+  $("login").style.display = token ? "none" : "block";
+  $("dashboard").style.display = token ? "block" : "none";
+}
+
+async function login(){
+  $("loginMsg").textContent = "";
+  try{
+    const r = await fetch("/api/auth/login", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username:$("username").value,password:$("password").value})
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "Login failed");
+    token = d.token;
+    localStorage.setItem("rakshaToken", token);
+    applyLoginState();
+    load();
+  }catch(e){ $("loginMsg").textContent = e.message; }
+}
+
+function logout(){
+  token = null;
+  localStorage.removeItem("rakshaToken");
+  applyLoginState();
+}
+
+async function load(){
+  if(!token) return;
+  try{
+    const r = await fetch("/api/device/"+DEVICE_ID+"/latest", {
+      headers:{Authorization:"Bearer "+token}
+    });
+    if(r.status===401){ logout(); return; }
+    if(!r.ok) return;
+    const d = await r.json();
+
+    $("device").textContent = d.deviceId;
+    $("received").textContent = new Date(d.receivedAt).toLocaleString();
+    $("wifi").textContent = show(d.wifi);
+    $("gps").textContent = show(d.gpsFix);
+    $("sos").textContent = show(d.sosActive);
+    $("impact").textContent = show(d.impactDetected);
+    $("vibration").textContent = show(d.vibrationDetected);
+    $("event").textContent = d.eventType + " — " + (d.event || "");
+    $("lat").textContent = Number(d.latitude).toFixed(6);
+    $("lon").textContent = Number(d.longitude).toFixed(6);
+    $("sat").textContent = d.satellites;
+    $("acc").textContent = Number(d.acceleration).toFixed(2) + " m/s²";
+    $("temp").textContent = Number(d.temperature).toFixed(1) + " °C";
+    $("buzzer").textContent = show(d.buzzer);
+    $("led").textContent = show(d.led);
+
+    const alert = $("alert");
+    if(d.sosActive || d.impactDetected || d.vibrationDetected){
+      alert.style.display = "block";
+      alert.innerHTML = "<strong>⚠ SAFETY EVENT DETECTED</strong><br>"+(d.event || d.eventType);
+    }else{
+      alert.style.display = "none";
+    }
+  }catch(e){}
+}
+
+applyLoginState();
+load();
+setInterval(load, 2000);
+</script>
+</body>
+</html>
